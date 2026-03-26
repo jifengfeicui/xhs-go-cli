@@ -1,19 +1,22 @@
 package search
 
 import (
-	"database/sql"
+	"context"
 	"encoding/json"
 
 	"xhs-go-cli/internal/mcp"
+	"xhs-go-cli/internal/model"
+	"xhs-go-cli/internal/repository"
 )
 
 type Service struct {
-	db     *sql.DB
-	client *mcp.Client
+	queryRepo  repository.QueryRepository
+	resultRepo repository.SearchResultRepository
+	client     *mcp.Client
 }
 
 type QueryRow struct {
-	ID    int64
+	ID    uint
 	Query string
 }
 
@@ -24,33 +27,35 @@ type SearchResult struct {
 	Author    string `json:"author"`
 }
 
-func NewService(db *sql.DB, client *mcp.Client) *Service {
-	return &Service{db: db, client: client}
+func NewService(queryRepo repository.QueryRepository, resultRepo repository.SearchResultRepository, client *mcp.Client) *Service {
+	return &Service{
+		queryRepo:  queryRepo,
+		resultRepo: resultRepo,
+		client:     client,
+	}
 }
 
-func (s *Service) ListQueries(limit int) ([]QueryRow, error) {
-	rows, err := s.db.Query(`SELECT id, query FROM generated_queries ORDER BY id ASC LIMIT ?`, limit)
+func (s *Service) ListQueries(ctx context.Context, limit int) ([]QueryRow, error) {
+	queries, err := s.queryRepo.List(ctx, limit)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []QueryRow
-	for rows.Next() {
-		var q QueryRow
-		if err := rows.Scan(&q.ID, &q.Query); err != nil {
-			return nil, err
-		}
-		out = append(out, q)
+	result := make([]QueryRow, len(queries))
+	for i, q := range queries {
+		result[i] = QueryRow{ID: q.ID, Query: q.Query}
 	}
-	return out, rows.Err()
+	return result, nil
 }
 
-func (s *Service) SaveGeneratedQuery(sourceID int64, query string, queryType string) error {
-	_, err := s.db.Exec(`INSERT INTO generated_queries(source_id, query, query_type) VALUES(?, ?, ?)`, sourceID, query, queryType)
-	return err
+func (s *Service) SaveGeneratedQuery(ctx context.Context, sourceID uint, query string, queryType string) error {
+	return s.queryRepo.Create(ctx, &model.GeneratedQuery{
+		SourceID:  sourceID,
+		Query:     query,
+		QueryType: queryType,
+	})
 }
 
-func (s *Service) SearchAndStore(queryID int64, query string, limit int) (int, error) {
+func (s *Service) SearchAndStore(ctx context.Context, queryID uint, query string, limit int) (int, error) {
 	raw, err := s.client.Search(query, limit)
 	if err != nil {
 		return 0, err
@@ -61,10 +66,14 @@ func (s *Service) SearchAndStore(queryID int64, query string, limit int) (int, e
 	}
 	for _, item := range items {
 		rawJSON, _ := json.Marshal(item)
-		_, err := s.db.Exec(
-			`INSERT INTO search_results(query_id, feed_id, xsec_token, title, author, raw_json) VALUES(?, ?, ?, ?, ?, ?)`,
-			queryID, item.FeedID, item.XsecToken, item.Title, item.Author, string(rawJSON),
-		)
+		err := s.resultRepo.Create(ctx, &model.SearchResult{
+			QueryID:   queryID,
+			FeedID:    item.FeedID,
+			XsecToken: item.XsecToken,
+			Title:     item.Title,
+			Author:    item.Author,
+			RawJSON:   string(rawJSON),
+		})
 		if err != nil {
 			return 0, err
 		}

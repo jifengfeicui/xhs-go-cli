@@ -34,9 +34,7 @@ export PATH=/root/go/go/bin:$PATH
 
 ### 2. Xiaohongshu MCP
 
-当前使用本地 MCP HTTP 服务：
-
-- Base URL: `http://127.0.0.1:18060`
+当前使用本地 MCP HTTP 服务，通过 `config.yaml` 配置。
 
 **重要：启动 MCP 时要在 `bin/` 目录里启动，不要在上一级目录启动。**
 
@@ -53,6 +51,25 @@ cd /root/.openclaw/workspace/projects/xiaohongshu-ops/runtime/xiaohongshu-mcp/bi
 ./xiaohongshu-mcp-linux-amd64
 ```
 
+### 3. 配置文件
+
+创建 `config.yaml`：
+
+```yaml
+db: ./data/xhs.db
+mcp:
+  base-url: http://127.0.0.1:18060
+```
+
+- `db`: 数据库路径（默认 `./data/xhs.db`）
+- `mcp.base-url`: MCP 服务地址
+
+命令行也可覆盖配置：
+
+```bash
+xhs-go-cli search --db ./other.db --mcp-url http://other:port
+```
+
 ---
 
 ## 项目结构
@@ -62,22 +79,26 @@ projects/xhs-go-cli/
 ├── go.mod
 ├── main.go
 ├── README.md
+├── config.yaml
 ├── .gitignore
 └── internal/
-    ├── db/
-    ├── source/
-    ├── querygen/
-    ├── search/
-    ├── detail/
-    ├── qualify/
-    └── mcp/
+    ├── cmd/          # CLI 命令
+    ├── db/           # 数据库层 (GORM)
+    ├── model/        # 数据模型
+    ├── repository/   # 数据仓库
+    ├── source/       # 来源导入
+    ├── querygen/     # 查询生成
+    ├── search/       # 搜索
+    ├── detail/       # 详情获取
+    ├── qualify/      # 资质校验
+    └── mcp/          # MCP 客户端
 ```
 
 ---
 
 ## SQLite 数据表
 
-当前会自动初始化以下表：
+当前会自动初始化以下表（GORM AutoMigrate）：
 
 - `sources`
 - `generated_queries`
@@ -96,7 +117,7 @@ projects/xhs-go-cli/
 ### 用法
 
 ```bash
-go run . import-sources --db <db_path> --input <sources_json>
+go run . import-sources --input <sources_json>
 ```
 
 ### 示例
@@ -107,7 +128,6 @@ export GOROOT=/root/go/go
 export PATH=/root/go/go/bin:$PATH
 
 go run . import-sources \
-  --db /tmp/xhs-go-cli-e2e.db \
   --input /root/.openclaw/workspace/projects/xiaohongshu-ops/data/xhs_source_records.json
 ```
 
@@ -126,22 +146,18 @@ go run . import-sources \
 ### 用法
 
 ```bash
-go run . query-gen --db <db_path> --limit <n> --per-source <n>
+go run . query-gen --limit <n> --per-source <n>
 ```
 
 ### 参数
 
-- `--db`：SQLite 路径
 - `--limit`：处理多少条来源
 - `--per-source`：每条来源生成多少个 query
 
 ### 示例
 
 ```bash
-go run . query-gen \
-  --db /tmp/xhs-go-cli-e2e.db \
-  --limit 5 \
-  --per-source 3
+go run . query-gen --limit 5 --per-source 3
 ```
 
 ### 当前行为
@@ -166,24 +182,18 @@ go run . query-gen \
 ### 用法
 
 ```bash
-go run . search --db <db_path> --limit <n> --page-size <n> --base-url <url>
+go run . search --limit <n> --page-size <n>
 ```
 
 ### 参数
 
-- `--db`：SQLite 路径
 - `--limit`：本轮取多少条 query
 - `--page-size`：每个 query 请求多少条搜索结果
-- `--base-url`：MCP 服务地址，默认 `http://127.0.0.1:18060`
 
 ### 示例
 
 ```bash
-go run . search \
-  --db /tmp/xhs-go-cli-e2e.db \
-  --limit 5 \
-  --page-size 5 \
-  --base-url http://127.0.0.1:18060
+go run . search --limit 5 --page-size 5
 ```
 
 ### 当前行为
@@ -209,24 +219,18 @@ go run . search \
 ### 用法
 
 ```bash
-go run . fetch-detail --db <db_path> --limit <n> --concurrency <n> --base-url <url>
+go run . fetch-detail --limit <n> --concurrency <n>
 ```
 
 ### 参数
 
-- `--db`：SQLite 路径
 - `--limit`：本轮最多取多少条搜索结果
 - `--concurrency`：detail 拉取并发数
-- `--base-url`：MCP 服务地址
 
 ### 示例
 
 ```bash
-go run . fetch-detail \
-  --db /tmp/xhs-go-cli-e2e.db \
-  --limit 10 \
-  --concurrency 3 \
-  --base-url http://127.0.0.1:18060
+go run . fetch-detail --limit 10 --concurrency 3
 ```
 
 ### 当前行为
@@ -245,20 +249,17 @@ go run . fetch-detail \
 ### 用法
 
 ```bash
-go run . qualify --db <db_path> --limit <n>
+go run . qualify --limit <n>
 ```
 
 ### 参数
 
-- `--db`：SQLite 路径
 - `--limit`：本轮处理多少条 detail
 
 ### 示例
 
 ```bash
-go run . qualify \
-  --db /tmp/xhs-go-cli-e2e.db \
-  --limit 10
+go run . qualify --limit 10
 ```
 
 ### 当前判断门槛
@@ -290,33 +291,19 @@ export PATH=/root/go/go/bin:$PATH
 
 # 1) 导入来源
 go run . import-sources \
-  --db /tmp/xhs-go-cli-e2e.db \
   --input /root/.openclaw/workspace/projects/xiaohongshu-ops/data/xhs_source_records.json
 
 # 2) 生成 query
-go run . query-gen \
-  --db /tmp/xhs-go-cli-e2e.db \
-  --limit 5 \
-  --per-source 3
+go run . query-gen --limit 5 --per-source 3
 
 # 3) 搜索
-go run . search \
-  --db /tmp/xhs-go-cli-e2e.db \
-  --limit 5 \
-  --page-size 5 \
-  --base-url http://127.0.0.1:18060
+go run . search --limit 5 --page-size 5
 
 # 4) 拉详情
-go run . fetch-detail \
-  --db /tmp/xhs-go-cli-e2e.db \
-  --limit 10 \
-  --concurrency 3 \
-  --base-url http://127.0.0.1:18060
+go run . fetch-detail --limit 10 --concurrency 3
 
 # 5) 做达标判断
-go run . qualify \
-  --db /tmp/xhs-go-cli-e2e.db \
-  --limit 10
+go run . qualify --limit 10
 ```
 
 ---

@@ -1,61 +1,75 @@
 package qualify
 
 import (
-	"database/sql"
+	"context"
 	"encoding/json"
 	"strings"
+
+	"xhs-go-cli/internal/model"
+	"xhs-go-cli/internal/repository"
 )
 
 type Service struct {
-	db *sql.DB
+	detailRepo repository.DetailRepository
+	qualRepo   repository.QualificationRepository
 }
 
 type DetailRow struct {
-	ID         int64
+	ID         uint
 	FeedID     string
 	DetailJSON string
 	Status     string
 }
 
 type Qualification struct {
-	FeedID             string `json:"feed_id"`
-	Status             string `json:"status"`
-	Title              string `json:"title,omitempty"`
-	SourceLink         string `json:"source_link,omitempty"`
-	ClaimRule          string `json:"claim_rule,omitempty"`
-	Location           string `json:"location,omitempty"`
+	FeedID              string `json:"feed_id"`
+	Status              string `json:"status"`
+	Title               string `json:"title,omitempty"`
+	SourceLink          string `json:"source_link,omitempty"`
+	ClaimRule           string `json:"claim_rule,omitempty"`
+	Location            string `json:"location,omitempty"`
 	ParticipationMethod string `json:"participation_method,omitempty"`
-	Reason             string `json:"reason,omitempty"`
+	Reason              string `json:"reason,omitempty"`
 }
 
-func NewService(db *sql.DB) *Service {
-	return &Service{db: db}
+func NewService(detailRepo repository.DetailRepository, qualRepo repository.QualificationRepository) *Service {
+	return &Service{
+		detailRepo: detailRepo,
+		qualRepo:   qualRepo,
+	}
 }
 
-func (s *Service) ListDetails(limit int) ([]DetailRow, error) {
-	rows, err := s.db.Query(`SELECT id, feed_id, detail_json, fetch_status FROM details ORDER BY id ASC LIMIT ?`, limit)
+func (s *Service) ListDetails(ctx context.Context, limit int) ([]DetailRow, error) {
+	details, err := s.detailRepo.ListPending(ctx, limit)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []DetailRow
-	for rows.Next() {
-		var row DetailRow
-		if err := rows.Scan(&row.ID, &row.FeedID, &row.DetailJSON, &row.Status); err != nil {
-			return nil, err
+	rows := make([]DetailRow, len(details))
+	for i, d := range details {
+		rows[i] = DetailRow{
+			ID:         d.ID,
+			FeedID:     d.FeedID,
+			DetailJSON: d.DetailJSON,
+			Status:     d.FetchStatus,
 		}
-		out = append(out, row)
 	}
-	return out, rows.Err()
+	return rows, nil
 }
 
-func (s *Service) QualifyAndStore(rows []DetailRow) ([]Qualification, error) {
+func (s *Service) QualifyAndStore(ctx context.Context, rows []DetailRow) ([]Qualification, error) {
 	out := make([]Qualification, 0, len(rows))
 	for _, row := range rows {
 		q := qualifyOne(row)
-		_, err := s.db.Exec(`INSERT INTO qualifications(feed_id, status, title, source_link, claim_rule, location, participation_method, reason) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
-			q.FeedID, q.Status, q.Title, q.SourceLink, q.ClaimRule, q.Location, q.ParticipationMethod, q.Reason,
-		)
+		err := s.qualRepo.Create(ctx, &model.Qualification{
+			FeedID:              q.FeedID,
+			Status:              q.Status,
+			Title:               q.Title,
+			SourceLink:          q.SourceLink,
+			ClaimRule:           q.ClaimRule,
+			Location:            q.Location,
+			ParticipationMethod: q.ParticipationMethod,
+			Reason:              q.Reason,
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -77,11 +91,21 @@ func qualifyOne(row DetailRow) Qualification {
 
 	q := Qualification{FeedID: row.FeedID, Title: title, SourceLink: sourceLink, ClaimRule: claimRule, Location: location, ParticipationMethod: participation}
 	missing := []string{}
-	if q.Title == "" { missing = append(missing, "title") }
-	if q.SourceLink == "" { missing = append(missing, "source_link") }
-	if q.ClaimRule == "" { missing = append(missing, "claim_rule") }
-	if q.Location == "" { missing = append(missing, "location") }
-	if q.ParticipationMethod == "" { missing = append(missing, "participation_method") }
+	if q.Title == "" {
+		missing = append(missing, "title")
+	}
+	if q.SourceLink == "" {
+		missing = append(missing, "source_link")
+	}
+	if q.ClaimRule == "" {
+		missing = append(missing, "claim_rule")
+	}
+	if q.Location == "" {
+		missing = append(missing, "location")
+	}
+	if q.ParticipationMethod == "" {
+		missing = append(missing, "participation_method")
+	}
 	if len(missing) == 0 {
 		q.Status = "accepted"
 		return q
@@ -104,7 +128,9 @@ func nestedMap(value map[string]any, keys ...string) map[string]any {
 }
 
 func asString(v any) string {
-	if s, ok := v.(string); ok { return s }
+	if s, ok := v.(string); ok {
+		return s
+	}
 	return ""
 }
 

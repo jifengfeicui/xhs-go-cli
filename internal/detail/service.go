@@ -1,26 +1,28 @@
 package detail
 
 import (
-	"database/sql"
+	"context"
 	"encoding/json"
 	"fmt"
 	"sync"
 
 	"xhs-go-cli/internal/mcp"
+	"xhs-go-cli/internal/model"
+	"xhs-go-cli/internal/repository"
 )
-
 
 type detailFetcher interface {
 	Detail(feedID string, xsecToken string) ([]byte, error)
 }
 
 type Service struct {
-	db     *sql.DB
-	client detailFetcher
+	resultRepo repository.SearchResultRepository
+	detailRepo repository.DetailRepository
+	client     detailFetcher
 }
 
 type SearchRow struct {
-	ID        int64
+	ID        uint
 	FeedID    string
 	XsecToken string
 	Title     string
@@ -33,28 +35,32 @@ type FetchResult struct {
 	Error  string `json:"error,omitempty"`
 }
 
-func NewService(db *sql.DB, client *mcp.Client) *Service {
-	return &Service{db: db, client: client}
+func NewService(resultRepo repository.SearchResultRepository, detailRepo repository.DetailRepository, client *mcp.Client) *Service {
+	return &Service{
+		resultRepo: resultRepo,
+		detailRepo: detailRepo,
+		client:     client,
+	}
 }
 
-func (s *Service) ListPending(limit int) ([]SearchRow, error) {
-	rows, err := s.db.Query(`SELECT id, feed_id, xsec_token, title FROM search_results ORDER BY id ASC LIMIT ?`, limit)
+func (s *Service) ListPending(ctx context.Context, limit int) ([]SearchRow, error) {
+	results, err := s.resultRepo.ListPending(ctx, limit)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []SearchRow
-	for rows.Next() {
-		var row SearchRow
-		if err := rows.Scan(&row.ID, &row.FeedID, &row.XsecToken, &row.Title); err != nil {
-			return nil, err
+	rows := make([]SearchRow, len(results))
+	for i, r := range results {
+		rows[i] = SearchRow{
+			ID:        r.ID,
+			FeedID:    r.FeedID,
+			XsecToken: r.XsecToken,
+			Title:     r.Title,
 		}
-		out = append(out, row)
 	}
-	return out, rows.Err()
+	return rows, nil
 }
 
-func (s *Service) FetchAndStore(rows []SearchRow, concurrency int) ([]FetchResult, error) {
+func (s *Service) FetchAndStore(ctx context.Context, rows []SearchRow, concurrency int) ([]FetchResult, error) {
 	if concurrency <= 0 {
 		concurrency = 1
 	}
@@ -70,7 +76,7 @@ func (s *Service) FetchAndStore(rows []SearchRow, concurrency int) ([]FetchResul
 				results <- FetchResult{FeedID: row.FeedID, Title: row.Title, Status: "error", Error: err.Error()}
 				continue
 			}
-			if err := s.saveDetail(row, raw, "ok"); err != nil {
+			if err := s.saveDetail(ctx, row, raw, "ok"); err != nil {
 				results <- FetchResult{FeedID: row.FeedID, Title: row.Title, Status: "error", Error: err.Error()}
 				continue
 			}
@@ -96,12 +102,16 @@ func (s *Service) FetchAndStore(rows []SearchRow, concurrency int) ([]FetchResul
 	return out, nil
 }
 
-func (s *Service) saveDetail(row SearchRow, raw []byte, status string) error {
+func (s *Service) saveDetail(ctx context.Context, row SearchRow, raw []byte, status string) error {
 	var compact map[string]any
 	if err := json.Unmarshal(raw, &compact); err != nil {
 		return fmt.Errorf("decode detail: %w", err)
 	}
 	body, _ := json.Marshal(compact)
-	_, err := s.db.Exec(`INSERT INTO details(feed_id, xsec_token, detail_json, fetch_status) VALUES(?, ?, ?, ?)`, row.FeedID, row.XsecToken, string(body), status)
-	return err
+	return s.detailRepo.Create(ctx, &model.Detail{
+		FeedID:      row.FeedID,
+		XsecToken:   row.XsecToken,
+		DetailJSON:  string(body),
+		FetchStatus: status,
+	})
 }
