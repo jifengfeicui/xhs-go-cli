@@ -3,12 +3,15 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"xhs-go-cli/internal/logger"
 )
 
 var (
-	cfgFile string
-	dbPath  string
-	baseURL string
+	cfgFile  string
+	dbPath   string
+	baseURL  string
+	logLevel string
 )
 
 func NewRootCommand() *cobra.Command {
@@ -23,6 +26,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./config.yaml)")
 	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "", "sqlite db path (default from config)")
 	rootCmd.PersistentFlags().StringVar(&baseURL, "mcp-url", "", "mcp base url (default from config)")
+	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "", "log level (default from config)")
 
 	viper.BindPFlag("db", rootCmd.PersistentFlags().Lookup("db"))
 	viper.BindPFlag("mcp.base-url", rootCmd.PersistentFlags().Lookup("mcp-url"))
@@ -38,6 +42,17 @@ func initConfig() {
 		viper.SetConfigName("config")
 	}
 	viper.ReadInConfig()
+
+	level := logLevel
+	if level == "" {
+		level = viper.GetString("log.level")
+	}
+	if level == "" {
+		level = "info"
+	}
+	if err := logger.Init(level); err != nil {
+		logger.Fatal("Failed to init logger", "error", err)
+	}
 }
 
 func getDBPath() string {

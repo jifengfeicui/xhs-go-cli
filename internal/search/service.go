@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"xhs-go-cli/internal/mcp"
 	"xhs-go-cli/internal/model"
@@ -67,14 +68,22 @@ func (s *Service) SaveGeneratedQuery(ctx context.Context, sourceID uint, query s
 	})
 }
 
-func (s *Service) SearchAndStore(ctx context.Context, queryID uint, query string, limit int) (int, error) {
-	raw, err := s.client.Search(query, limit)
+func (s *Service) SearchAndStore(ctx context.Context, queryID uint, query string, saveLimit int) (int, error) {
+	filters := mcp.FilterOption{
+		PublishTime: "一周内",
+		NoteType:    "图文",
+		Location:    "同城",
+	}
+	raw, err := s.client.Search(query, filters)
 	if err != nil {
 		return 0, err
 	}
 	items, err := parseSearchResults(raw)
 	if err != nil {
 		return 0, err
+	}
+	if saveLimit > 0 && len(items) > saveLimit {
+		items = items[:saveLimit]
 	}
 	for _, item := range items {
 		rawJSON, _ := json.Marshal(item)
@@ -96,22 +105,23 @@ func (s *Service) SearchAndStore(ctx context.Context, queryID uint, query string
 func parseSearchResults(raw []byte) ([]SearchResult, error) {
 	var payload map[string]any
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unmarshal error: %w", err)
 	}
 	data, _ := payload["data"].(map[string]any)
-	inner, _ := data["data"].(map[string]any)
-	itemsRaw, _ := inner["items"].([]any)
-	results := make([]SearchResult, 0, len(itemsRaw))
-	for _, item := range itemsRaw {
+	feedsRaw, _ := data["feeds"].([]any)
+	results := make([]SearchResult, 0, len(feedsRaw))
+	for _, item := range feedsRaw {
 		m, ok := item.(map[string]any)
 		if !ok {
 			continue
 		}
+		noteCard, _ := m["noteCard"].(map[string]any)
+		user, _ := noteCard["user"].(map[string]any)
 		results = append(results, SearchResult{
 			FeedID:    asString(m["id"]),
-			XsecToken: asString(m["xsec_token"]),
-			Title:     asString(m["title"]),
-			Author:    asString(m["author"]),
+			XsecToken: asString(m["xsecToken"]),
+			Title:     asString(noteCard["displayTitle"]),
+			Author:    asString(user["nickname"]),
 		})
 	}
 	return results, nil

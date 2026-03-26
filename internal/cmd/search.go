@@ -14,7 +14,7 @@ import (
 
 func NewSearchCmd() *cobra.Command {
 	var limit int
-	var pageSize int
+	var saveLimit int
 
 	cmd := &cobra.Command{
 		Use:   "search",
@@ -37,7 +37,7 @@ func NewSearchCmd() *cobra.Command {
 			}
 			out := make([]map[string]any, 0, len(queries))
 			for _, q := range queries {
-				count, err := service.SearchAndStore(cmd.Context(), q.ID, q.Query, pageSize)
+				count, err := service.SearchAndStore(cmd.Context(), q.ID, q.Query, saveLimit)
 				if err != nil {
 					out = append(out, map[string]any{"query_id": q.ID, "query": q.Query, "error": err.Error()})
 					continue
@@ -51,7 +51,7 @@ func NewSearchCmd() *cobra.Command {
 	}
 
 	cmd.Flags().IntVar(&limit, "limit", 5, "query limit")
-	cmd.Flags().IntVar(&pageSize, "page-size", 10, "search page size")
+	cmd.Flags().IntVar(&saveLimit, "save-limit", 10, "save limit per query")
 
 	return cmd
 }
