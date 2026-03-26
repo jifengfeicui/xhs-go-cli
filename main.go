@@ -7,7 +7,9 @@ import (
 	"os"
 
 	"xhs-go-cli/internal/db"
+	"xhs-go-cli/internal/mcp"
 	"xhs-go-cli/internal/querygen"
+	"xhs-go-cli/internal/search"
 	"xhs-go-cli/internal/source"
 )
 
@@ -22,6 +24,8 @@ func main() {
 		runImportSources(os.Args[2:])
 	case "query-gen":
 		runQueryGen(os.Args[2:])
+	case "search":
+		runSearch(os.Args[2:])
 	default:
 		fmt.Printf("unknown subcommand: %s\n", os.Args[1])
 		os.Exit(1)
@@ -56,7 +60,6 @@ func runQueryGen(args []string) {
 	limit := fs.Int("limit", 10, "source limit")
 	perSource := fs.Int("per-source", 3, "queries per source")
 	_ = fs.Parse(args)
-	_ = perSource
 
 	database, err := db.Open(*dbPath)
 	if err != nil {
@@ -64,6 +67,7 @@ func runQueryGen(args []string) {
 	}
 	defer database.Close()
 	repo := source.NewRepo(database)
+	searchSvc := search.NewService(database, nil)
 	sources, err := repo.List(*limit)
 	if err != nil {
 		panic(err)
@@ -78,6 +82,9 @@ func runQueryGen(args []string) {
 			SourceType: querygen.ClassifySourceType(src.Name, src.Keywords),
 		}
 		queries := querygen.GenerateQueries(qsrc, *perSource)
+		for _, query := range queries {
+			_ = searchSvc.SaveGeneratedQuery(src.ID, query, qsrc.SourceType)
+		}
 		result = append(result, map[string]any{
 			"source_id":   src.ID,
 			"source_name": src.Name,
@@ -86,4 +93,35 @@ func runQueryGen(args []string) {
 		})
 	}
 	_ = json.NewEncoder(os.Stdout).Encode(result)
+}
+
+func runSearch(args []string) {
+	fs := flag.NewFlagSet("search", flag.ExitOnError)
+	dbPath := fs.String("db", "xhs.db", "sqlite db path")
+	limit := fs.Int("limit", 5, "query limit")
+	pageSize := fs.Int("page-size", 10, "search page size")
+	baseURL := fs.String("base-url", "http://127.0.0.1:18060", "mcp base url")
+	_ = fs.Parse(args)
+
+	database, err := db.Open(*dbPath)
+	if err != nil {
+		panic(err)
+	}
+	defer database.Close()
+	client := mcp.New(*baseURL)
+	service := search.NewService(database, client)
+	queries, err := service.ListQueries(*limit)
+	if err != nil {
+		panic(err)
+	}
+	out := make([]map[string]any, 0, len(queries))
+	for _, q := range queries {
+		count, err := service.SearchAndStore(q.ID, q.Query, *pageSize)
+		if err != nil {
+			out = append(out, map[string]any{"query_id": q.ID, "query": q.Query, "error": err.Error()})
+			continue
+		}
+		out = append(out, map[string]any{"query_id": q.ID, "query": q.Query, "stored": count})
+	}
+	_ = json.NewEncoder(os.Stdout).Encode(out)
 }
