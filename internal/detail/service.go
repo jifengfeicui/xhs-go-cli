@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 
 	"xhs-go-cli/internal/mcp"
 	"xhs-go-cli/internal/model"
@@ -60,44 +59,19 @@ func (s *Service) ListPending(ctx context.Context, limit int) ([]SearchRow, erro
 	return rows, nil
 }
 
-func (s *Service) FetchAndStore(ctx context.Context, rows []SearchRow, concurrency int) ([]FetchResult, error) {
-	if concurrency <= 0 {
-		concurrency = 1
-	}
-	jobs := make(chan SearchRow)
-	results := make(chan FetchResult, len(rows))
-	var wg sync.WaitGroup
-
-	worker := func() {
-		defer wg.Done()
-		for row := range jobs {
-			raw, err := s.client.Detail(row.FeedID, row.XsecToken)
-			if err != nil {
-				results <- FetchResult{FeedID: row.FeedID, Title: row.Title, Status: "error", Error: err.Error()}
-				continue
-			}
-			if err := s.saveDetail(ctx, row, raw, "ok"); err != nil {
-				results <- FetchResult{FeedID: row.FeedID, Title: row.Title, Status: "error", Error: err.Error()}
-				continue
-			}
-			results <- FetchResult{FeedID: row.FeedID, Title: row.Title, Status: "ok"}
-		}
-	}
-
-	for i := 0; i < concurrency; i++ {
-		wg.Add(1)
-		go worker()
-	}
-	for _, row := range rows {
-		jobs <- row
-	}
-	close(jobs)
-	wg.Wait()
-	close(results)
-
+func (s *Service) FetchAndStore(ctx context.Context, rows []SearchRow) ([]FetchResult, error) {
 	out := make([]FetchResult, 0, len(rows))
-	for item := range results {
-		out = append(out, item)
+	for _, row := range rows {
+		raw, err := s.client.Detail(row.FeedID, row.XsecToken)
+		if err != nil {
+			out = append(out, FetchResult{FeedID: row.FeedID, Title: row.Title, Status: "error", Error: err.Error()})
+			continue
+		}
+		if err := s.saveDetail(ctx, row, raw, "ok"); err != nil {
+			out = append(out, FetchResult{FeedID: row.FeedID, Title: row.Title, Status: "error", Error: err.Error()})
+			continue
+		}
+		out = append(out, FetchResult{FeedID: row.FeedID, Title: row.Title, Status: "ok"})
 	}
 	return out, nil
 }
@@ -108,10 +82,13 @@ func (s *Service) saveDetail(ctx context.Context, row SearchRow, raw []byte, sta
 		return fmt.Errorf("decode detail: %w", err)
 	}
 	body, _ := json.Marshal(compact)
-	return s.detailRepo.Create(ctx, &model.Detail{
+	if err := s.detailRepo.Create(ctx, &model.Detail{
 		FeedID:      row.FeedID,
 		XsecToken:   row.XsecToken,
 		DetailJSON:  string(body),
 		FetchStatus: status,
-	})
+	}); err != nil {
+		return err
+	}
+	return s.resultRepo.UpdateStatus(ctx, row.ID, "fetched")
 }

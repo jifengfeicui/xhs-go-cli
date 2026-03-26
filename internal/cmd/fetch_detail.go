@@ -14,7 +14,6 @@ import (
 
 func NewFetchDetailCmd() *cobra.Command {
 	var limit int
-	var concurrency int
 
 	cmd := &cobra.Command{
 		Use:   "fetch-detail",
@@ -35,7 +34,7 @@ func NewFetchDetailCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := service.FetchAndStore(cmd.Context(), rows, concurrency)
+			result, err := service.FetchAndStore(cmd.Context(), rows)
 			if err != nil {
 				return err
 			}
@@ -45,7 +44,6 @@ func NewFetchDetailCmd() *cobra.Command {
 	}
 
 	cmd.Flags().IntVar(&limit, "limit", 20, "detail row limit")
-	cmd.Flags().IntVar(&concurrency, "concurrency", 3, "detail fetch concurrency")
 
 	return cmd
 }

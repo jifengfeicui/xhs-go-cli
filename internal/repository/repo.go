@@ -138,12 +138,16 @@ func (r *GormSearchResultRepo) Create(ctx context.Context, result *model.SearchR
 
 func (r *GormSearchResultRepo) ListPending(ctx context.Context, limit int) ([]model.SearchResult, error) {
 	var results []model.SearchResult
-	query := r.db.WithContext(ctx).Order("id ASC")
+	query := r.db.WithContext(ctx).Where("status = ?", "pending").Order("id ASC")
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
 	err := query.Find(&results).Error
 	return results, err
+}
+
+func (r *GormSearchResultRepo) UpdateStatus(ctx context.Context, id uint, status string) error {
+	return r.db.WithContext(ctx).Model(&model.SearchResult{}).Where("id = ?", id).Update("status", status).Error
 }
 
 type GormDetailRepo struct {

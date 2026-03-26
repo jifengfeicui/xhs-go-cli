@@ -46,6 +46,7 @@ type SearchResult struct {
 	Title     string    `gorm:"size:500;not null;default:''" json:"title"`
 	Author    string    `gorm:"size:255;not null;default:''" json:"author"`
 	RawJSON   string    `gorm:"type:text;not null" json:"raw_json"`
+	Status    string    `gorm:"size:20;not null;default:'pending'" json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

@@ -24,6 +24,7 @@ type QueryRepository interface {
 type SearchResultRepository interface {
 	Create(ctx context.Context, r *model.SearchResult) error
 	ListPending(ctx context.Context, limit int) ([]model.SearchResult, error)
+	UpdateStatus(ctx context.Context, id uint, status string) error
 }
 
 type DetailRepository interface {

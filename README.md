@@ -219,25 +219,25 @@ go run . search --limit 5 --page-size 5
 ### 用法
 
 ```bash
-go run . fetch-detail --limit <n> --concurrency <n>
+go run . fetch-detail --limit <n>
 ```
 
 ### 参数
 
-- `--limit`：本轮最多取多少条搜索结果
-- `--concurrency`：detail 拉取并发数
+- `--limit`：本轮最多取多少条搜索结果（默认 20）
 
 ### 示例
 
 ```bash
-go run . fetch-detail --limit 10 --concurrency 3
+go run . fetch-detail --limit 10
 ```
 
 ### 当前行为
 
-- 从 `search_results` 读取候选
-- 并发调用 `/api/v1/feeds/detail`
+- 从 `search_results` 中读取 `status = 'pending'` 的记录
+- 串行调用 `/api/v1/feeds/detail`
 - 把 detail JSON 写进 `details`
+- 更新对应 search_result 的状态为 `fetched`
 - stdout 返回每条 feed 的抓取状态
 
 ---
@@ -300,7 +300,7 @@ go run . query-gen --limit 5 --per-source 3
 go run . search --limit 5 --page-size 5
 
 # 4) 拉详情
-go run . fetch-detail --limit 10 --concurrency 3
+go run . fetch-detail --limit 10
 
 # 5) 做达标判断
 go run . qualify --limit 10
