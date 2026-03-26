@@ -5,3 +5,10 @@ bin/
 vendor/
 .tmp/
 .DS_Store
+.idea/
+config.yaml
+convert.py
+convertt.py
+data/
+sources.json
+xhs-go-cli.exe
