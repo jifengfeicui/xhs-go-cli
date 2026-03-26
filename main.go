@@ -7,7 +7,9 @@ import (
 	"os"
 
 	"xhs-go-cli/internal/db"
+	"xhs-go-cli/internal/detail"
 	"xhs-go-cli/internal/mcp"
+	"xhs-go-cli/internal/qualify"
 	"xhs-go-cli/internal/querygen"
 	"xhs-go-cli/internal/search"
 	"xhs-go-cli/internal/source"
@@ -26,6 +28,10 @@ func main() {
 		runQueryGen(os.Args[2:])
 	case "search":
 		runSearch(os.Args[2:])
+	case "fetch-detail":
+		runFetchDetail(os.Args[2:])
+	case "qualify":
+		runQualify(os.Args[2:])
 	default:
 		fmt.Printf("unknown subcommand: %s\n", os.Args[1])
 		os.Exit(1)
@@ -124,4 +130,53 @@ func runSearch(args []string) {
 		out = append(out, map[string]any{"query_id": q.ID, "query": q.Query, "stored": count})
 	}
 	_ = json.NewEncoder(os.Stdout).Encode(out)
+}
+
+func runFetchDetail(args []string) {
+	fs := flag.NewFlagSet("fetch-detail", flag.ExitOnError)
+	dbPath := fs.String("db", "xhs.db", "sqlite db path")
+	limit := fs.Int("limit", 20, "detail row limit")
+	concurrency := fs.Int("concurrency", 3, "detail fetch concurrency")
+	baseURL := fs.String("base-url", "http://127.0.0.1:18060", "mcp base url")
+	_ = fs.Parse(args)
+
+	database, err := db.Open(*dbPath)
+	if err != nil {
+		panic(err)
+	}
+	defer database.Close()
+	client := mcp.New(*baseURL)
+	service := detail.NewService(database, client)
+	rows, err := service.ListPending(*limit)
+	if err != nil {
+		panic(err)
+	}
+	result, err := service.FetchAndStore(rows, *concurrency)
+	if err != nil {
+		panic(err)
+	}
+	_ = json.NewEncoder(os.Stdout).Encode(result)
+}
+
+func runQualify(args []string) {
+	fs := flag.NewFlagSet("qualify", flag.ExitOnError)
+	dbPath := fs.String("db", "xhs.db", "sqlite db path")
+	limit := fs.Int("limit", 20, "qualification row limit")
+	_ = fs.Parse(args)
+
+	database, err := db.Open(*dbPath)
+	if err != nil {
+		panic(err)
+	}
+	defer database.Close()
+	service := qualify.NewService(database)
+	rows, err := service.ListDetails(*limit)
+	if err != nil {
+		panic(err)
+	}
+	result, err := service.QualifyAndStore(rows)
+	if err != nil {
+		panic(err)
+	}
+	_ = json.NewEncoder(os.Stdout).Encode(result)
 }
