@@ -47,6 +47,18 @@ func (s *Service) ListQueries(ctx context.Context, limit int) ([]QueryRow, error
 	return result, nil
 }
 
+func (s *Service) ListPendingQueries(ctx context.Context, limit int) ([]QueryRow, error) {
+	queries, err := s.queryRepo.ListPending(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]QueryRow, len(queries))
+	for i, q := range queries {
+		result[i] = QueryRow{ID: q.ID, Query: q.Query}
+	}
+	return result, nil
+}
+
 func (s *Service) SaveGeneratedQuery(ctx context.Context, sourceID uint, query string, queryType string) error {
 	return s.queryRepo.Create(ctx, &model.GeneratedQuery{
 		SourceID:  sourceID,

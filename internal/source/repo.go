@@ -14,7 +14,7 @@ type Source struct {
 	Name           string
 	Keywords       string
 	SourceType     string
-	Priority       string
+	Priority       int
 	Level          string
 	City           string
 	Confidence     string
@@ -106,7 +106,7 @@ func ImportFromJSON(ctx context.Context, repo *Repo, path string) (int, error) {
 			Name:           name,
 			Keywords:       plainText(fields["监控关键词"]),
 			SourceType:     plainText(fields["来源类型"]),
-			Priority:       plainText(fields["优先级"]),
+			Priority:       toInt(fields["优先级"]),
 			Level:          plainText(fields["名单层级"]),
 			City:           plainText(fields["城市"]),
 			Confidence:     plainText(fields["可信度"]),
@@ -139,5 +139,24 @@ func plainText(v any) string {
 		return result
 	default:
 		return ""
+	}
+}
+
+func toInt(v any) int {
+	switch x := v.(type) {
+	case int:
+		return x
+	case float64:
+		return int(x)
+	case string:
+		var n int
+		for _, c := range x {
+			if c >= '0' && c <= '9' {
+				n = n*10 + int(c-'0')
+			}
+		}
+		return n
+	default:
+		return 0
 	}
 }
